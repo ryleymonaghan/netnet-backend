@@ -20,6 +20,7 @@ router.get('/', authMiddleware, async (req, res) => {
   let query = supabase
     .from('nn_reconciliation')
     .select('*')
+    .eq('user_id', req.user.id)
     .order('created_at', { ascending: false });
 
   if (account_id) query = query.eq('account_id', account_id);
@@ -36,7 +37,7 @@ router.post('/', authMiddleware, async (req, res) => {
   // Calculate balance from transactions for this period
   const [year, month] = period.split('-');
   const startDate = `${year}-${month}-01`;
-  const endDate = new Date(Number(year), Number(month), 0).toISOString().split('T')[0];
+  const endDate = new Date(Number(year), Number(month), 1, -1).toISOString().split('T')[0];
 
   const { data: txs, error: txErr } = await supabase
     .from('nn_transactions')
@@ -53,6 +54,7 @@ router.post('/', authMiddleware, async (req, res) => {
   const { data, error } = await supabase
     .from('nn_reconciliation')
     .insert({
+      user_id: req.user.id,
       account_id,
       period,
       period_type: period_type || 'monthly',
