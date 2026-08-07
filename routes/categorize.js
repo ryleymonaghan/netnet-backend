@@ -3,12 +3,20 @@ const supabase = require('../lib/supabase');
 const anthropic = require('../lib/anthropic');
 
 const TAXONOMY = `REVENUE: Service Revenue, Rental Income, Product Sales, Reimbursements
-COGS: Materials & Supplies, Subcontractor Labor, Equipment Rental, Job-Site Costs
+COGS: Materials & Supplies, Subcontractor Labor, Equipment Rental, Warranty Claims, Job-Site Costs
 PAYROLL: Owner Salary/Draw, Employee Wages, Payroll Taxes, Benefits
 CONTROLLABLE EXPENSES: Marketing & Advertising, Software & Subscriptions, Professional Services, Travel & Transportation, Meals & Entertainment (50%), Office Supplies, Phone & Communications, Uniforms & Safety Gear
 FIXED EXPENSES: Rent / Mortgage, Insurance (GL Workers Comp E&O), Loan Payments, Equipment Payments, Utilities
 CAPITAL & ASSETS: Equipment Purchase (Section 179 eligible), Vehicle Purchase, Real Estate, Improvements
-PERSONAL: Personal Purchase, Owner Personal Draw, Non-Business Transfer`;
+PERSONAL: Personal Purchase, Owner Personal Draw, Non-Business Transfer
+
+Guidance on ambiguous construction categories:
+- "Warranty Claims" is COGS spent fixing completed work at no charge to the
+  customer: callbacks, punch-list repairs after closeout, remediation, rework.
+  Look for descriptions naming a finished job plus repair/callback/warranty
+  language. It is NOT new work, and NOT a job-site cost on an active build.
+- "Job-Site Costs" is spend on an ACTIVE job that is not materials, sub labor,
+  or rental: dumpsters, portable toilets, temp power, site fencing, permits.`;
 
 async function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
