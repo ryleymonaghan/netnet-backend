@@ -21,7 +21,9 @@ async function authMiddleware(req, res, next) {
 
 // GET /api/transactions
 router.get('/', authMiddleware, async (req, res) => {
-  const { entity_id, account_id, limit = 100, offset = 0 } = req.query;
+  // Default was 100, and the client never overrode it — so a 293-transaction
+  // import silently loaded a third of the data and every total was wrong.
+  const { entity_id, account_id, limit = 5000, offset = 0 } = req.query;
   let query = supabase
     .from('nn_transactions')
     .select('*')
