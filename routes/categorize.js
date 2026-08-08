@@ -2,6 +2,11 @@ const router = require('express').Router();
 const supabase = require('../lib/supabase');
 const anthropic = require('../lib/anthropic');
 
+// Pinned snapshot IDs expire. claude-sonnet-4-20250514 was retired 2026-06-15
+// and every call failed with no visible reason. Use the alias, overridable by
+// env so a future migration is a variable change rather than a code change.
+const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
+
 const TAXONOMY = `REVENUE: Service Revenue, Rental Income, Product Sales, Reimbursements
 COGS: Materials & Supplies, Subcontractor Labor, Equipment Rental, Warranty Claims, Job-Site Costs
 PAYROLL: Owner Salary/Draw, Employee Wages, Payroll Taxes, Benefits
@@ -46,7 +51,7 @@ router.post('/', authMiddleware, async (req, res) => {
     if (txErr || !tx) return res.status(404).json({ error: 'Transaction not found' });
 
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: MODEL,
       max_tokens: 256,
       messages: [{
         role: 'user',
@@ -163,7 +168,7 @@ router.post('/batch', authMiddleware, async (req, res) => {
         `${i + 1}. ${t.date} | ${t.description} | $${t.amount}`).join('\n');
 
       const message = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: MODEL,
         max_tokens: 4096,
         messages: [{
           role: 'user',
@@ -221,6 +226,7 @@ Return ONLY a JSON array with one object per transaction, in the same order, no 
 
     let done = [];
     let failed = 0;
+    const errors = [];
     for (let i = 0; i < chunks.length; i += CONCURRENCY) {
       const slice = chunks.slice(i, i + CONCURRENCY);
       const settled = await Promise.allSettled(slice.map(categorizeChunk));
@@ -228,7 +234,9 @@ Return ONLY a JSON array with one object per transaction, in the same order, no 
         if (r.status === 'fulfilled') done = done.concat(r.value);
         else {
           failed += slice[j].length;
-          console.error('[NN] chunk failed:', r.reason?.message);
+          const msg = r.reason?.message || String(r.reason);
+          if (!errors.includes(msg)) errors.push(msg);
+          console.error('[NN] chunk failed:', msg);
         }
       });
     }
@@ -239,6 +247,9 @@ Return ONLY a JSON array with one object per transaction, in the same order, no 
       needs_review: done.filter(d => d.confidence !== null && d.confidence < 0.75).length,
       remaining,
       chunks: chunks.length,
+      model: MODEL,
+      // Without this a total failure just reported "0 categorized" with no clue why.
+      errors: errors.slice(0, 3),
     });
   } catch (err) {
     console.error('[NN] Batch categorize error:', err);

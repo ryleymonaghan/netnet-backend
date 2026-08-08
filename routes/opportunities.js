@@ -1,4 +1,8 @@
 const router = require('express').Router();
+
+// Same retirement that killed categorization: claude-sonnet-4-20250514 went
+// offline 2026-06-15. Keep the model in one place, overridable by env.
+const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 const supabase = require('../lib/supabase');
 const anthropic = require('../lib/anthropic');
 
@@ -50,7 +54,7 @@ router.post('/scan', authMiddleware, async (req, res) => {
     const txSummary = txs.map(t => `${t.date} | ${t.description} | $${t.amount} | ${t.category} > ${t.subcategory}`).join('\n');
 
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: MODEL,
       max_tokens: 1024,
       messages: [{
         role: 'user',
