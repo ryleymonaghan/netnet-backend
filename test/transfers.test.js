@@ -25,11 +25,12 @@ async function main() {
     for (const s of sections) allSections.push({ ...s, file });
   }
 
-  const { matches, unmatched, volumeEliminated } = matchTransfers(allSections);
+  const { matches, unmatched, external, volumeEliminated } = matchTransfers(allSections);
 
   console.log(`Matched pairs: ${matches.length}`);
   console.log(`Transfer volume eliminated: $${volumeEliminated.toFixed(2)}`);
   console.log(`Unmatched: ${unmatched.length}`);
+  console.log(`External (another member's account, not internal): ${external.length}`);
 
   if (unmatched.length) {
     console.log('\n--- UNMATCHED TRANSFERS (missing statement or parse failure) ---');
@@ -38,6 +39,16 @@ async function main() {
         `  ${u.file}  ${u.date}  acct ${u.accountNumber}  ${u.direction.padEnd(3)}  ` +
         `$${u.amount.toFixed(2).padStart(10)}  [${u.kind}]  ` +
         `counterparty=${u.counterpartyAccount || '?'}  "${u.description.slice(0, 60)}"`
+      );
+    }
+  }
+
+  if (external.length) {
+    console.log('\n--- EXTERNAL (tagged for manual classification) ---');
+    for (const u of external.sort((a, b) => a.day - b.day)) {
+      console.log(
+        `  ${u.file}  ${u.date}  acct ${u.accountNumber}  ${u.direction.padEnd(3)}  ` +
+        `$${u.amount.toFixed(2).padStart(10)}  ${u.tx.transferTag}  "${u.description.slice(0, 60)}"`
       );
     }
   }

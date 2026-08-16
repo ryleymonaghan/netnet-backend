@@ -142,6 +142,22 @@ fails loudly with the specific account and month named.
 > cross-check: December 2025 reads $1,237.79, exactly matching this spec's
 > validation target below.
 
+> **Correction (2026-08-16):** a real bug, found while chasing down two
+> unmatched Feb 2025 transfers in `lib/parsers/transfers.js` (a $300 and a
+> $150 pair) that turned out to reconcile fine on amount but had lost their
+> transfer-tagging description text. Root cause was in `lib/parsers/rows.js`:
+> when a transaction's amount lands on the LAST line of a page, its
+> continuation description line can be the very FIRST content line of the
+> NEXT page, after the repeated "(continued)" header. The row parser was
+> calling `flushIncomplete()` (which clears the in-progress transaction) on
+> EVERY header match, including a same-account "(continued)" header — so by
+> the time the orphaned continuation line arrived, there was nothing left to
+> attach it to, and it was silently dropped. Fixed to only reset
+> `inActivity`/the in-progress transaction on a genuine account switch, never
+> on a same-account continuation. Both Feb transfers matched correctly once
+> fixed; the underlying $ amounts and reconciliation were never wrong, only
+> the merchant/transfer-tag text describing them.
+
 ---
 
 ## ACCOUNT DEFAULT MATRIX
@@ -236,6 +252,17 @@ statement or a parse failure.
 
 Add `INTERNAL_TRANSFER` as a first-class category. Do not reuse
 `PERSONAL / Non-Business Transfer` — that conflates two very different things.
+
+> **Correction (2026-08-16):** not every SHARES suffix maps to one of our 5
+> accounts. One real fixture (02/18/2025, $5,000 into 6715) reads `TFR FROM
+> SHARES #######78-71` — `78-71` isn't in the lookup table above. SC Federal
+> is a credit union; "shares" spans membership, not just our four business
+> accounts, so this is a transfer from another member's account — not
+> internal, and not a parse failure either. Tagged `EXTERNAL_INBOUND` (or
+> `EXTERNAL_OUTBOUND` for the reverse direction) instead of forcing it
+> through the internal matcher or reporting it as unmatched. It goes to the
+> review queue for manual classification — someone has to say what this
+> money actually is.
 
 ---
 
