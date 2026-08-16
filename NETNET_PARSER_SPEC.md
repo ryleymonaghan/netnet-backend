@@ -173,6 +173,16 @@ new behavior — the current importer treats all accounts identically.
 | 6731 | REVIEW | Mostly draws — mortgages, utilities, card pmts |
 | 6621 | LOAN | Split principal / interest |
 
+> **Correction (2026-08-16):** the loan's principal/interest split (row) must
+> be applied BEFORE checking whether `lib/parsers/transfers.js` tagged the
+> transaction `INTERNAL_TRANSFER`. The loan's own "Regular Payment" row gets
+> that tag too — it genuinely is the inbound leg of the checking account's
+> outbound `LOAN PYMT TO LOAN` transfer, fund-flow wise. But categorizing the
+> whole row that way would silently erase the real interest expense along
+> with the principal paydown. The checking side's outbound leg has no
+> principal/interest fields, so it isn't affected — only the loan's own
+> record needs the split to run first.
+
 ### 6715 business whitelist (seed list — extend from data)
 ```
 BUCK LUMBER, BUILDERSFIRSTSOURCE, LOWE'S, HOME DEPOT, TRACTOR SUPPLY,
@@ -276,6 +286,13 @@ Accumulate a running `SHAREHOLDER_DISTRIBUTION` total from every transaction
 classified PERSONAL that was paid from a business account. Surface it as a
 headline figure on the dashboard alongside the three-tier P&L — it is as
 important as any expense number.
+
+> **Scoping decision (2026-08-16):** "business expenses by category" and the
+> distribution tally only count debits (outflows), not credits. A
+> BUSINESS-tagged deposit into 6723 (e.g. a client payment) is revenue, not
+> an expense; a PERSONAL-tagged credit (e.g. a refund) isn't a new
+> distribution — "paid from" implies money leaving the account. This wasn't
+> stated explicitly in the spec and is worth double-checking against intent.
 
 ---
 
