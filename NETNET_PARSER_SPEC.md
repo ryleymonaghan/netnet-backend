@@ -187,13 +187,47 @@ Patterns to net to zero:
 ```
 TFR TO CHECKG x####
 TFR FRM CHECKG x####
+TFR TO SAVGS x####
+TFR FRM SAVGS x####
 TFR TO SHARES #######66-##
 TFR FROM SHARES #######66-##
 LOAN PYMT TO LOAN x6621
-LOAN PYMT FRM CHECKG x####
 Overdraft Transfer
-Electronic Transfer   (when paired with a SHARES/CHECKG description line)
+Electronic Transfer   (when paired with a SHARES/CHECKG/SAVGS description line)
 ```
+
+> **Correction (2026-08-16):** three things above differ from what this spec
+> originally said, all confirmed against `lib/parsers/transfers.js` running
+> on the real 12 fixtures:
+>
+> - **SAVGS wording.** Variant B (current) doesn't only say "CHECKG" — a
+>   transfer to/from the savings account (6600) is worded `TFR TO/FRM SAVGS
+>   x6600`, since 6600 isn't a checking account. Missing this pattern left
+>   every 6600<->6723 transfer in the current-format months unmatched. The
+>   wording is chosen by what the COUNTERPARTY account is, not the account
+>   whose statement you're reading: 6600's own ledger calls its transfers to
+>   6715/6723/6731 "CHECKG" (they're checking accounts), while 6715/6723/6731
+>   call transfers to 6600 "SAVGS".
+> - **Legacy SHARES suffix mapping.** Variant A (legacy) never says "CHECKG"
+>   or "SAVGS" at all — every inter-account transfer, including
+>   checking-to-checking, is worded `TFR TO/FROM SHARES #######<suffix>`,
+>   where `<suffix>` is a 2-digit-hyphen-2-digit legacy code, not the 4-digit
+>   account number. It isn't derived from any documented mask format — it
+>   was reverse-engineered by matching real date+amount pairs across
+>   accounts (e.g. 6600's outbound "$5,000.00 TFR TO SHARES #######66-72" on
+>   01/07/2025 lines up exactly with 6723's inbound "$5,000.00 TFR FROM
+>   SHARES #######66-00" the same day):
+>   `66-00→6600, 66-71→6715, 66-72→6723, 66-73→6731, 66-21→6621`.
+> - **No "LOAN PYMT FRM CHECKG".** The loan's own ledger never prints that
+>   text (removed from the pattern list above). It just prints "Regular
+>   Payment" (see the CORE RULE correction above) — every loan payment row
+>   is the inbound side of a `LOAN PYMT TO LOAN` transfer by construction,
+>   matched on amount + date alone since the loan side carries no
+>   counterparty account text to check against.
+>
+> With these three corrected, transfer volume eliminated (counting both
+> legs of each matched pair) comes to 40.5% of total transaction volume —
+> matching this spec's own ~40% estimate almost exactly.
 
 Match each outbound to its inbound counterpart by amount + date (±2 days) +
 complementary account. Tag matched pairs `INTERNAL_TRANSFER` and exclude from
