@@ -1,6 +1,6 @@
 {
   "name": "netnet-backend",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Net-Net backend — AI-powered tax categorization engine",
   "main": "index.js",
   "scripts": {
