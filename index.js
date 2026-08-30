@@ -1,4 +1,4 @@
-// Net-Net Backend v0.2.0
+// Net-Net Backend — version read from package.json
 // Express API server for AI-powered tax categorization
 require('dotenv').config();
 const express = require('express');
@@ -45,7 +45,7 @@ app.use(express.json({ limit: '10mb' }));
 
 // ─── Health Check ────────────────────────────────────────
 app.get('/', (req, res) => {
-  res.json({ status: 'ok', app: 'netnet-backend', version: '0.2.0' });
+  res.json({ status: 'ok', app: 'netnet-backend', version: require('./package.json').version });
 });
 
 app.get('/health', (req, res) => {
