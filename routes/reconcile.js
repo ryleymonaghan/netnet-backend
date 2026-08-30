@@ -34,6 +34,21 @@ router.get('/', authMiddleware, async (req, res) => {
 router.post('/', authMiddleware, async (req, res) => {
   const { account_id, period, period_type, statement_balance } = req.body;
 
+  if (!account_id) return res.status(400).json({ error: 'account_id is required' });
+
+  // The service-role client bypasses RLS, so ownership is enforced here or not
+  // at all. Without this check any authenticated caller could pass a stranger's
+  // account_id and read that account's period total back out of `calculated`.
+  const { data: acct, error: acctErr } = await supabase
+    .from('nn_accounts')
+    .select('id')
+    .eq('id', account_id)
+    .eq('user_id', req.user.id)
+    .maybeSingle();
+
+  if (acctErr) return res.status(500).json({ error: acctErr.message });
+  if (!acct) return res.status(404).json({ error: 'Account not found' });
+
   // Calculate balance from transactions for this period
   const [year, month] = period.split('-');
   const startDate = `${year}-${month}-01`;
@@ -42,6 +57,7 @@ router.post('/', authMiddleware, async (req, res) => {
   const { data: txs, error: txErr } = await supabase
     .from('nn_transactions')
     .select('amount')
+    .eq('user_id', req.user.id)
     .eq('account_id', account_id)
     .gte('date', startDate)
     .lte('date', endDate);

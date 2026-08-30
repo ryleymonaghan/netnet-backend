@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const supabase = require('../lib/supabase');
 const anthropic = require('../lib/anthropic');
+const { applyRules } = require('../lib/rules');
 
 // Pinned snapshot IDs expire. claude-sonnet-4-20250514 was retired 2026-06-15
 // and every call failed with no visible reason. Use the alias, overridable by
@@ -21,7 +22,14 @@ Guidance on ambiguous construction categories:
   Look for descriptions naming a finished job plus repair/callback/warranty
   language. It is NOT new work, and NOT a job-site cost on an active build.
 - "Job-Site Costs" is spend on an ACTIVE job that is not materials, sub labor,
-  or rental: dumpsters, portable toilets, temp power, site fencing, permits.`;
+  or rental: dumpsters, portable toilets, temp power, site fencing, permits.
+
+NEEDS_REVIEW is a real answer and you must use it. If the description does not
+tell you what the money was for, return NEEDS_REVIEW rather than the closest
+plausible category. A wrong deduction gets disallowed; wrongly booked income gets
+characterized. Neither is recoverable by a confidence score, and a category you
+picked at 0.6 is indistinguishable downstream from one you knew. Abstaining is
+cheap: it puts one line in front of the owner. Guessing is not.`;
 
 async function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -92,6 +100,7 @@ Return JSON only:
         ai_notes: json.notes,
       })
       .eq('id', transaction_id)
+      .eq('user_id', req.user.id)
       .select()
       .single();
 
@@ -149,19 +158,51 @@ router.post('/batch', authMiddleware, async (req, res) => {
     const batch = all.slice(0, MAX_PER_REQUEST);
     const remaining = Math.max(0, all.length - batch.length);
 
+    // ── Rule pass, before any API call ───────────────────────────────────────
+    // Transfers, reversals and classified senders have right answers. Rows the
+    // rules ABSTAIN on are written as NEEDS_REVIEW and deliberately never reach
+    // the model — sending an unknown Zelle sender to Claude just launders a
+    // guess into a confidence score.
+    const { data: knownSenders } = await supabase
+      .from('nn_known_senders')
+      .select('name, classification, note')
+      .eq('user_id', req.user.id);
+
+    const ruleCtx = { knownSenders: knownSenders || [] };
+    const ruled = [];
+    const toModel = [];
+    for (const tx of batch) {
+      const r = applyRules(tx, ruleCtx);
+      if (r) ruled.push({ tx, r }); else toModel.push(tx);
+    }
+
+    await Promise.all(ruled.map(({ tx, r }) =>
+      supabase.from('nn_transactions').update({
+        category: r.category,
+        subcategory: r.subcategory,
+        tax_treatment: r.tax_treatment,
+        write_off: r.write_off,
+        write_off_pct: r.write_off_pct,
+        confidence: r.confidence,
+        ai_notes: r.notes || null,
+      }).eq('id', tx.id).eq('user_id', req.user.id)
+    ));
+
+    const ruleReview = ruled.filter(x => x.r.needs_review).length;
+
     // Entity context helps Claude tell business spend from personal.
     let entityLabel = entity_name, entityKind = entity_type;
     if (!entityLabel) {
       const { data: ents } = await supabase
         .from('nn_entities').select('id, name, type').eq('user_id', req.user.id);
       const map = Object.fromEntries((ents || []).map(e => [e.id, e]));
-      const first = map[batch[0].entity_id];
+      const first = map[batch[0]?.entity_id];
       entityLabel = first?.name || 'Unknown';
       entityKind  = first?.type || 'LLC';
     }
 
     const chunks = [];
-    for (let i = 0; i < batch.length; i += CHUNK) chunks.push(batch.slice(i, i + CHUNK));
+    for (let i = 0; i < toModel.length; i += CHUNK) chunks.push(toModel.slice(i, i + CHUNK));
 
     const categorizeChunk = async (rows) => {
       const list = rows.map((t, i) =>
@@ -183,7 +224,11 @@ Assign each from this exact taxonomy:
 ${TAXONOMY}
 
 Return ONLY a JSON array with one object per transaction, in the same order, no prose and no markdown fences:
-[{"n":1,"category":"","subcategory":"","tax_treatment":"deductible|cogs|payroll|personal|capital","write_off":true,"write_off_pct":100,"confidence":0.95,"notes":"Short plain-English reason"}]`,
+[{"n":1,"category":"","subcategory":"","tax_treatment":"deductible|cogs|payroll|personal|capital","write_off":true,"write_off_pct":100,"confidence":0.95,"notes":"Short plain-English reason"}]
+
+Return one object for EVERY numbered transaction. If you cannot tell what a row
+was for, that row's category is "NEEDS_REVIEW" with confidence null — do not omit
+it and do not substitute your best guess.`,
         }],
       });
 
@@ -202,11 +247,26 @@ Return ONLY a JSON array with one object per transaction, in the same order, no 
       if (!Array.isArray(parsed)) throw new Error('Model did not return an array');
 
       const updates = [];
+      const seen = new Set();
       for (const item of parsed) {
         const idx = Number(item.n) - 1;
         const tx = rows[idx];
         if (!tx || !item.category) continue;
+        seen.add(tx.id);
         updates.push({ tx, item });
+      }
+
+      // A row the model skipped used to be counted as neither categorized nor
+      // failed. It stayed category:null, the response reported success, and the
+      // owner's totals were quietly short by however many rows were dropped.
+      // Silence is the worst possible outcome here — surface them as review.
+      const dropped = rows.filter(t => !seen.has(t.id));
+      for (const tx of dropped) {
+        updates.push({ tx, item: {
+          category: 'NEEDS_REVIEW', subcategory: null, tax_treatment: null,
+          write_off: false, write_off_pct: null, confidence: null,
+          notes: 'The categorizer returned no answer for this row. Not skipped, not assumed — yours to classify.',
+        }});
       }
 
       await Promise.all(updates.map(({ tx, item }) =>
@@ -221,7 +281,11 @@ Return ONLY a JSON array with one object per transaction, in the same order, no 
         }).eq('id', tx.id).eq('user_id', req.user.id)
       ));
 
-      return updates.map(u => ({ id: u.tx.id, confidence: u.item.confidence ?? null }));
+      return updates.map(u => ({
+        id: u.tx.id,
+        category: u.item.category,
+        confidence: u.item.confidence ?? null,
+      }));
     };
 
     let done = [];
@@ -241,10 +305,18 @@ Return ONLY a JSON array with one object per transaction, in the same order, no 
       });
     }
 
+    // needs_review is every row a human must look at, from any source: rules
+    // that abstained, the model's own NEEDS_REVIEW, rows it dropped, and
+    // anything it answered below the confidence floor.
+    const modelReview = done.filter(d =>
+      d.category === 'NEEDS_REVIEW' || (d.confidence !== null && d.confidence < 0.75)).length;
+
     res.json({
-      categorized: done.length,
+      categorized: ruled.length + done.length,
+      by_rules: ruled.length,
+      by_model: done.length,
       failed,
-      needs_review: done.filter(d => d.confidence !== null && d.confidence < 0.75).length,
+      needs_review: ruleReview + modelReview,
       remaining,
       chunks: chunks.length,
       model: MODEL,

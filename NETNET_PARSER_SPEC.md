@@ -190,8 +190,12 @@ SHERWIN-WILLIAMS, HARBOR FREIGHT, ALL SEASONS HARDWARE, SITEONE,
 GUSTO, ADP, INTUIT, QUICKBOOKS, DOCUSIGN, PROPOSIFY, JOIST, CANVA,
 ADOBE, OPENPHONE, BILLER GENIE, MERCHANT BANKCD, SURFERSEO, BLUEHOST,
 GODADDY, MICROSOFT, GOOGLE ADS, TRIDENT WASTE, STARLINK, MINT MOBILE,
-A & R SHEET METAL, ISLAND SEPTIC, COASTAL MARINAS
+A & R SHEET METAL, ISLAND SEPTIC
 ```
+
+> **Correction (2026-08-17):** COASTAL MARINAS moved out of this whitelist
+> and into known-personal below — confirmed personal boat slip fees, not a
+> business expense.
 
 ### Known-personal patterns (force PERSONAL regardless of account)
 ```
@@ -199,8 +203,24 @@ NETFLIX, DISNEY PLUS, PEACOCK, PARAMOUNT+, SLING, TINDER, BUMBLE,
 ONLYFANS, CCBILL, SEEKING, WINGMAN, PURE ANONYMOU, ZEDGE,
 STONO LIQUORS, FOOD LION, PUBLIX, HARRIS TEETER, WHOLEFDS,
 SUNSHINE SPIRITS, LOWCOUNTRY WINE, PLANET VAPE, ROOMS TO GO,
-SYNCHRONY, ROCKET MORTGAGE, LOANDEPOT, IRS - USATAXPYMT
+SYNCHRONY, ROCKET MORTGAGE, LOANDEPOT, IRS - USATAXPYMT, COASTAL MARINAS
 ```
+
+> **Correction (2026-08-17):** three new named categories added alongside the
+> account-default matrix, checked regardless of account (same precedence tier
+> as the liability payments above): `EQUIPMENT_LOAN` (Deere Credit — lump sum
+> for now, same as `LOC_PAYMENT`; a statement with the principal/interest
+> split hasn't arrived), `HEALTH_INSURANCE` (UnitedHealthcare, BCBS —
+> UnitedHealthcare bounced twice and was refunded twice in June 2025, so this
+> one must be netted debit-minus-credit, not summed debit-only, or the
+> reconciliation overstates the premium), and `INSURANCE` (Progressive,
+> Munro, Commercial Insurance, Obsidian — non-health coverage, debit-only
+> like the other named expense categories). All three were previously
+> falling through to the generic account-default buckets (mostly `Business
+> (6723 operating)` or 6715's `Personal (default)`), which is where a $14
+> Progressive refund credit had been silently miscounted as `REVENUE` — it
+> matched the bare "Deposit" pattern before this category existed to catch
+> it first.
 
 ---
 

@@ -4,3 +4,7 @@ node_modules
 .DS_Store
 *.log
 test/fixtures/
+exports/
+_to_delete/
+.claude/
+netnet-commit-msg.txt
